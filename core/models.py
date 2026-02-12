@@ -12,6 +12,164 @@ from django.utils import timezone
 
 
 # =====================================================
+# NEW: DifficultySettings - Manage game difficulty from admin
+# =====================================================
+class DifficultySettings(models.Model):
+    """
+    Manage difficulty settings for each game mode.
+    Configure points, time limits, shuffle frequency, etc. from admin panel.
+    """
+    DIFFICULTY_CHOICES = [
+        (1, _('Easy')),
+        (2, _('Medium')),
+        (3, _('Hard'))
+    ]
+
+    difficulty_level = models.IntegerField(
+        choices=DIFFICULTY_CHOICES,
+        unique=True,
+        verbose_name=_("Difficulty Level")
+    )
+
+    # Display names for each language
+    name_en = models.CharField(
+        max_length=50,
+        default="Easy",
+        verbose_name=_("Name (English)")
+    )
+    name_uz = models.CharField(
+        max_length=50,
+        default="Oson",
+        verbose_name=_("Name (Uzbek)")
+    )
+    name_ru = models.CharField(
+        max_length=50,
+        default="Легко",
+        verbose_name=_("Name (Russian)")
+    )
+
+    # Description for each language
+    description_en = models.CharField(
+        max_length=200,
+        default="5 Points + Hints",
+        verbose_name=_("Description (English)")
+    )
+    description_uz = models.CharField(
+        max_length=200,
+        default="5 ball + maslahatlar",
+        verbose_name=_("Description (Uzbek)")
+    )
+    description_ru = models.CharField(
+        max_length=200,
+        default="5 очков + подсказки",
+        verbose_name=_("Description (Russian)")
+    )
+
+    # Game parameters
+    time_seconds = models.IntegerField(
+        default=180,
+        validators=[MinValueValidator(30), MaxValueValidator(600)],
+        help_text=_("Game duration in seconds (30-600)")
+    )
+
+    base_points = models.IntegerField(
+        default=5,
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text=_("Base points per match (1-100)")
+    )
+
+    level_multiplier = models.IntegerField(
+        default=2,
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text=_("Score multiplier (1-10)")
+    )
+
+    combo_bonus_per_match = models.FloatField(
+        default=1.5,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text=_("Bonus points per combo match (0-10)")
+    )
+
+    # Shuffle settings
+    shuffle_enabled = models.BooleanField(
+        default=False,
+        verbose_name=_("Enable Shuffling"),
+        help_text=_("Should cards shuffle during gameplay?")
+    )
+
+    shuffle_frequency = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(60)],
+        help_text=_("Shuffle every X seconds (0 = disabled, max 60)")
+    )
+
+    # Hints
+    hints_enabled = models.BooleanField(
+        default=True,
+        verbose_name=_("Show Hints"),
+        help_text=_("Show hint pair at the start?")
+    )
+
+    # Combo penalty
+    combo_penalty_on_wrong = models.FloatField(
+        default=0.5,
+        validators=[MinValueValidator(0), MaxValueValidator(1)],
+        help_text=_("Combo reduction multiplier on wrong match (0-1, e.g., 0.5 = keep half)")
+    )
+
+    # Visual settings
+    card_color_text = models.CharField(
+        max_length=50,
+        default="linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        help_text=_("CSS gradient for text cards")
+    )
+
+    card_color_fruit = models.CharField(
+        max_length=50,
+        default="linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+        help_text=_("CSS gradient for fruit cards")
+    )
+
+    # Active status
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name=_("Active"),
+        help_text=_("Is this difficulty available to players?")
+    )
+
+    # Order
+    order = models.IntegerField(
+        default=0,
+        help_text=_("Display order (lower = first)")
+    )
+
+    class Meta:
+        verbose_name = _("Difficulty Setting")
+        verbose_name_plural = _("Difficulty Settings")
+        ordering = ['order', 'difficulty_level']
+
+    def __str__(self):
+        return f"{self.get_difficulty_level_display()} - {self.base_points}pts, {self.time_seconds}sec"
+
+    def save(self, *args, **kwargs):
+        # Auto-populate names if not set
+        if self.difficulty_level == 1 and not self.name_en:
+            self.name_en = "Easy"
+            self.name_uz = "Oson"
+            self.name_ru = "Легко"
+        elif self.difficulty_level == 2 and not self.name_en:
+            self.name_en = "Medium"
+            self.name_uz = "O'rta"
+            self.name_ru = "Средне"
+        elif self.difficulty_level == 3 and not self.name_en:
+            self.name_en = "Hard"
+            self.name_uz = "Qiyin"
+            self.name_ru = "Сложно"
+
+        super().save(*args, **kwargs)
+
+
+# =====================================================
 # GameConfig
 # =====================================================
 class GameConfig(models.Model):
@@ -26,7 +184,7 @@ class GameConfig(models.Model):
     )
     timer_seconds = models.PositiveIntegerField(
         default=60,
-        help_text=_("Game duration in seconds"),
+        help_text=_("Default game duration in seconds (deprecated - use DifficultySettings)"),
         validators=[MinValueValidator(10)]
     )
     promo_score_threshold = models.PositiveIntegerField(
@@ -53,6 +211,7 @@ class GameConfig(models.Model):
         obj, created = cls.objects.get_or_create(pk=1)
         return obj
 
+
 # =====================================================
 # FruitCard
 # =====================================================
@@ -73,6 +232,7 @@ class FruitCard(models.Model):
 
     def __str__(self):
         return self.title
+
 
 # =====================================================
 # TextCard
@@ -103,6 +263,7 @@ class TextCard(models.Model):
     def __str__(self):
         return self.title
 
+
 # =====================================================
 # Player (Custom User Model)
 # =====================================================
@@ -110,6 +271,7 @@ def uzbek_phone_validator(value):
     pattern = r'^\+998\d{9}$'
     if not re.match(pattern, value):
         raise ValidationError(_("Phone number must be in format +998XXXXXXXXX"))
+
 
 class PlayerManager(BaseUserManager):
     def create_user(self, phone_number, name, password=None, **extra_fields):
@@ -128,6 +290,7 @@ class PlayerManager(BaseUserManager):
         extra_fields.setdefault('is_superuser', True)
         return self.create_user(phone_number, name, password, **extra_fields)
 
+
 class Player(AbstractBaseUser, PermissionsMixin):
     THEME_CHOICES = [('light', _('Light')), ('dark', _('Dark'))]
     LANGUAGE_CHOICES = [('en', _('English')), ('uz', _('Uzbek')), ('ru', _('Russian'))]
@@ -142,10 +305,10 @@ class Player(AbstractBaseUser, PermissionsMixin):
     )
     theme = models.CharField(max_length=20, default='dark', choices=THEME_CHOICES)
     language = models.CharField(max_length=10, default='en', choices=LANGUAGE_CHOICES)
-    
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = PlayerManager()
@@ -168,11 +331,11 @@ class Player(AbstractBaseUser, PermissionsMixin):
         best = self.sessions.order_by('-score_balls').first()
         return best.score_balls if best else 0
 
+
 # =====================================================
 # GameSession
 # =====================================================
 class GameSession(models.Model):
-    # Removed Mode choices, defaults to Ranked behavior
     DIFFICULTY_CHOICES = [(1, _('Easy')), (2, _('Medium')), (3, _('Hard'))]
     ANTI_CHEAT_STATUS_CHOICES = [
         ('clean', _('Clean')), ('ok', _('OK')),
@@ -185,7 +348,6 @@ class GameSession(models.Model):
         related_name='sessions'
     )
     user_identifier = models.CharField(max_length=100, blank=True, null=True)
-    # Mode is now always implied to be ranked/standard
     difficulty = models.IntegerField(choices=DIFFICULTY_CHOICES, default=1)
     score_balls = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     started_at = models.DateTimeField(auto_now_add=True)
@@ -214,6 +376,7 @@ class GameSession(models.Model):
     def __str__(self):
         return f"Session {str(self.session_id)[:8]}... — {self.score_balls} pts"
 
+
 # =====================================================
 # Tournament
 # =====================================================
@@ -221,9 +384,8 @@ class Tournament(models.Model):
     active = models.BooleanField(default=True)
     prize_pool = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     def __str__(self):
         return f"Tournament ({'Active' if self.active else 'Inactive'}) - {self.prize_pool}"
-
 
 

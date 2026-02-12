@@ -1,4 +1,4 @@
-// static/js/ui.js - FINAL VERSION
+// static/js/ui.js - Clean version with History only
 
 class UI {
     constructor(api) {
@@ -7,7 +7,6 @@ class UI {
         this.currentLang = localStorage.getItem('lang') || 'en';
         this.currentTheme = localStorage.getItem('theme') || 'light';
         this.profileHistory = [];
-        this.profilePromos = [];
     }
 
     async init() {
@@ -63,6 +62,11 @@ class UI {
         document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
         const screen = document.getElementById(id);
         if (screen) screen.classList.remove('hidden');
+
+        // NEW: Dynamically populate level selection when showing level screen
+        if (id === 'level-screen') {
+            this.showLevelSelect();
+        }
 
         // Music control
         if (window.soundManager) {
@@ -138,6 +142,79 @@ class UI {
         }
     }
 
+    // NEW: Show dynamic level selection with admin-configured settings
+    showLevelSelect() {
+        this.showScreen('level-screen');
+
+        // Get difficulty settings from game
+        const settings = window.game?.difficultySettings || {};
+        const settingsArray = Object.values(settings)
+            .sort((a, b) => (a.order || a.level) - (b.order || b.level));
+
+        const container = document.getElementById('level-buttons-container');
+        if (!container) return;
+
+        if (settingsArray.length === 0) {
+            // Fallback to default buttons if no settings loaded yet
+            container.innerHTML = `
+                <button class="level-btn easy" onclick="startGameWithLevel(1)">
+                    <h3>Easy</h3>
+                    <p>5 Points + Hints</p>
+                </button>
+                <button class="level-btn medium" onclick="startGameWithLevel(2)">
+                    <h3>Medium</h3>
+                    <p>15 Points + Shuffles</p>
+                </button>
+                <button class="level-btn hard" onclick="startGameWithLevel(3)">
+                    <h3>Hard</h3>
+                    <p>20 Points + Fast Shuffles</p>
+                </button>
+            `;
+            return;
+        }
+
+        // Build buttons from admin settings
+        const colors = {
+            1: 'easy',    // green
+            2: 'medium',  // orange
+            3: 'hard'     // red
+        };
+
+        container.innerHTML = settingsArray.map(setting => {
+            const name = setting.names?.[this.currentLang] || setting.name_en || 'Unknown';
+            const desc = setting.descriptions?.[this.currentLang] || setting.description_en || '';
+            const colorClass = colors[setting.level] || 'easy';
+
+            return `
+                <button class="level-btn ${colorClass}" onclick="startGameWithLevel(${setting.level})">
+                    <h3>${name}</h3>
+                    <p>${desc}</p>
+                </button>
+            `;
+        }).join('');
+    }
+
+    async showLeaderboard() {
+        this.showScreen('leaderboard-screen');
+        const list = document.getElementById('leaderboard-list');
+        list.innerHTML = '<li class="loading">Loading...</li>';
+
+        try {
+            const entries = await this.api.getLeaderboard();
+            list.innerHTML = entries.length === 0
+                ? '<li class="empty">No scores yet</li>'
+                : entries.map((e, i) => `
+                    <li style="animation-delay: ${i * 0.05}s; opacity: 0;">
+                        <span class="rank">${i + 1}</span>
+                        <span class="name">${e.name}</span>
+                        <span class="score">${e.score_balls} pts</span>
+                    </li>
+                `).join('');
+        } catch (e) {
+            list.innerHTML = '<li class="error">Failed to load</li>';
+        }
+    }
+
     async showProfile() {
         this.showScreen('profile-screen');
         const content = document.getElementById('profile-content');
@@ -148,6 +225,7 @@ class UI {
         try {
             const data = await this.api.getProfile();
             if (!data.player) {
+                // Guest user - show login prompt
                 content.innerHTML = `
                     <div class="profile-guest">
                         <h3>Please login to view profile</h3>
@@ -157,9 +235,10 @@ class UI {
                 return;
             }
 
-            auth.innerHTML = `<button class="btn-logout" onclick="logout()">Logout</button>`;
+            // Logged in user - show logout button with translation
+            const dict = window.I18N[this.currentLang];
+            auth.innerHTML = `<button class="btn-logout" onclick="logout()">${dict.logout}</button>`;
             this.profileHistory = data.history || [];
-            this.profilePromos = data.promos || [];
 
             this.renderProfile(data.player);
         } catch (e) {
@@ -171,48 +250,37 @@ class UI {
         const content = document.getElementById('profile-content');
         const dict = window.I18N[this.currentLang];
 
+        // Profile header with player info
         content.innerHTML = `
             <div class="profile-header">
                 <h3>${player.name}</h3>
                 <p>${player.phone_number}</p>
             </div>
-            <div class="profile-actions">
-                <button class="btn-tab active" onclick="ui.switchProfileTab('history')">History</button>
-                <button class="btn-tab" onclick="ui.switchProfileTab('promos')">Promos</button>
-            </div>
-            <div id="profile-list-container"></div>
-        `;
 
-        this.switchProfileTab('history');
+            <!-- Only History section, no tabs needed -->
+            <div class="profile-section">
+                <h4>${dict.history}</h4>
+                ${this.renderHistory()}
+            </div>
+        `;
     }
 
-    switchProfileTab(tab) {
-        const container = document.getElementById('profile-list-container');
+    renderHistory() {
         const dict = window.I18N[this.currentLang];
 
-        document.querySelectorAll('.btn-tab').forEach(b => b.classList.remove('active'));
-        document.querySelector(`.btn-tab:nth-child(${tab === 'history' ? 1 : 2})`).classList.add('active');
+        if (this.profileHistory.length === 0) {
+            return `<ul class="history-list"><li class="empty">${dict.no_games || 'No games played yet'}</li></ul>`;
+        }
 
-        if (tab === 'history') {
-            const html = this.profileHistory.length === 0
-                ? `<ul class="history-list"><li class="empty">${dict.no_games || 'No games played'}</li></ul>`
-                : `<ul class="history-list">${this.profileHistory.map(g => `
+        return `
+            <ul class="history-list">
+                ${this.profileHistory.map(g => `
                     <li>
                         <span class="date">${new Date(g.date).toLocaleDateString()}</span>
                         <span class="score">${g.score} pts</span>
                     </li>
-                `).join('')}</ul>`;
-            container.innerHTML = html;
-        } else {
-            const html = this.profilePromos.length === 0
-                ? `<ul class="promo-list"><li class="empty">No promos yet</li></ul>`
-                : `<ul class="promo-list">${this.profilePromos.map(p => `
-                    <li class="promo-item">
-                        <div><code class="code-text">${p.code}</code><br><small>${new Date(p.claimed_at).toLocaleDateString()}</small></div>
-                        <button class="btn-copy-small" onclick="copyPromoCode('${p.code}')">Copy</button>
-                    </li>
-                `).join('')}</ul>`;
-            container.innerHTML = html;
-        }
+                `).join('')}
+            </ul>
+        `;
     }
 }

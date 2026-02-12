@@ -162,7 +162,12 @@ window.I18N = {
     instructions_difficulty: "Choose Your Challenge",
     instructions_easy_desc: "Hints visible, more time, no shuffling",
     instructions_medium_desc: "Balanced challenge with occasional shuffles",
-    instructions_hard_desc: "Maximum points, frequent shuffling"
+    instructions_hard_desc: "Maximum points, frequent shuffling",
+
+    // Logout confirmation
+    logout_confirm_title: "Are you sure you want to logout?",
+    logout_confirm_ok: "OK",
+    logout_confirm_cancel: "Cancel"
   },
 
   uz: {
@@ -209,7 +214,7 @@ window.I18N = {
 
     error_invalid_phone: "Telefon raqam noto'g'ri",
     error_required_fields: "Barcha maydonlarni to'ldiring",
-    logout: "Chiqish",
+    logout: "Profildan chiqish",
     games_played: "O'ynalgan o'yinlar",
     recent_games: "So'nggi o'yinlar",
     no_games: "Hozircha o'yinlar yo'q",
@@ -244,7 +249,12 @@ window.I18N = {
     instructions_difficulty: "Qiyinlikni tanlang",
     instructions_easy_desc: "Maslahatlar bor, ko'proq vaqt, aralashish yo'q",
     instructions_medium_desc: "O'rtacha qiyinlik, ba'zan aralashadi",
-    instructions_hard_desc: "Maksimal ball, tez-tez aralashadi"
+    instructions_hard_desc: "Maksimal ball, tez-tez aralashadi",
+
+    // Logout confirmation
+    logout_confirm_title: "Haqiqatan ham chiqmoqchimisiz?",
+    logout_confirm_ok: "Ha",
+    logout_confirm_cancel: "Yo'q"
   },
 
   ru: {
@@ -326,7 +336,12 @@ window.I18N = {
     instructions_difficulty: "Выберите сложность",
     instructions_easy_desc: "Подсказки видны, больше времени, нет перемешивания",
     instructions_medium_desc: "Сбалансированная сложность с редким перемешиванием",
-    instructions_hard_desc: "Максимум очков, частое перемешивание"
+    instructions_hard_desc: "Максимум очков, частое перемешивание",
+
+    // Logout confirmation
+    logout_confirm_title: "Вы уверены, что хотите выйти?",
+    logout_confirm_ok: "Да",
+    logout_confirm_cancel: "Отмена"
   }
 };
 

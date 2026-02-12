@@ -19,7 +19,7 @@ urlpatterns = [
     path('session/finish/', SessionFinishView.as_view(), name='session-finish'),
     path('leaderboard/', LeaderboardView.as_view(), name='leaderboard'),
     path('profile/', PlayerProfileView.as_view(), name='profile'),
-    path('tournaments/', TournamentView.as_view(), name='tournaments'),
+    # path('tournaments/', TournamentView.as_view(), name='tournaments'),
 
 ]
 

@@ -1,4 +1,4 @@
-# core/admin.py
+# core/admin.py - JAZZMIN COMPATIBLE VERSION
 from django.contrib import admin
 from django.db.models import Count, Max, Sum, Avg
 from django.utils.html import format_html
@@ -9,8 +9,110 @@ from django.urls import reverse
 from django.utils import timezone
 import csv
 import json
-from .models import GameConfig, FruitCard, TextCard, Player, GameSession, Tournament
+from .models import (
+    DifficultySettings, GameConfig, FruitCard, TextCard,
+    Player, GameSession, Tournament
+)
 
+
+# =====================================================
+# DifficultySettings Admin - JAZZMIN TABS
+# =====================================================
+@admin.register(DifficultySettings)
+class DifficultySettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        'difficulty_badge', 'name_display', 'time_seconds',
+        'base_points', 'level_multiplier', 'shuffle_status',
+        'hints_status', 'is_active', 'order'
+    )
+    list_filter = ('difficulty_level', 'is_active', 'shuffle_enabled', 'hints_enabled')
+    list_editable = ('is_active', 'order')
+    ordering = ('order', 'difficulty_level')
+
+    # ────────────────────────────────────────────────────────────────
+    # This line is the key fix: DISABLE modeltranslation's own tabs/JS
+    # Without this, clicks usually stay dead even with vertical_tabs
+    # ────────────────────────────────────────────────────────────────
+    class Media:
+        js = ()      # empty → no tabbed_translation_fields.js loaded
+        css = {}
+
+    fieldsets = (
+        ('Basic Info', {
+            'fields': ('difficulty_level', 'is_active', 'order'),
+            'description': mark_safe('<p style="color:#666;">Select difficulty level and display order</p>'),
+        }),
+        ('Names (EN / UZ / RU)', {
+            'fields': ('name_en', 'name_uz', 'name_ru'),
+            'description': mark_safe('<p style="color:#666;">Level name in each language</p>'),
+        }),
+        ('Descriptions (EN / UZ / RU)', {
+            'fields': ('description_en', 'description_uz', 'description_ru'),
+            'description': mark_safe('<p style="color:#666;">Description shown to players</p>'),
+        }),
+        ('Game Parameters ⚙️', {
+            'fields': (
+                'time_seconds',
+                ('base_points', 'level_multiplier'),
+                'combo_bonus_per_match',
+                'combo_penalty_on_wrong',
+            ),
+        }),
+        ('Shuffle Settings 🔀', {
+            'fields': ('shuffle_enabled', 'shuffle_frequency'),
+        }),
+        ('Hints & Assistance 💡', {
+            'fields': ('hints_enabled',),
+        }),
+        ('Visual Customization 🎨 (Advanced)', {
+            'fields': ('card_color_text', 'card_color_fruit'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    # Keep your badge / display methods as-is (they are fine)
+    # ... (difficulty_badge, name_display, shuffle_status, hints_status, save_model)
+
+    # Your existing methods (unchanged) ──────────────────────────────
+    def difficulty_badge(self, obj):
+        colors = {1: '#28a745', 2: '#ffc107', 3: '#dc3545'}
+        labels = {1: 'EASY', 2: 'MEDIUM', 3: 'HARD'}
+        color = colors.get(obj.difficulty_level, '#6c757d')
+        label = labels.get(obj.difficulty_level, '?')
+        return mark_safe(
+            f'<span style="background:{color};color:white;padding:6px 14px;'
+            f'border-radius:12px;font-weight:bold;font-size:11px;">{label}</span>'
+        )
+
+    difficulty_badge.short_description = 'Level'
+
+    def name_display(self, obj):
+        return format_html(
+            '<strong>{}</strong><br><small>UZ: {} | RU: {}</small>',
+            obj.name_en, obj.name_uz, obj.name_ru
+        )
+
+    name_display.short_description = 'Name'
+
+    def shuffle_status(self, obj):
+        if obj.shuffle_enabled:
+            return mark_safe(f'<span style="color:#28a745;">✓ {obj.shuffle_frequency}s</span>')
+        return mark_safe('<span style="color:#aaa;">✗</span>')
+
+    shuffle_status.short_description = 'Shuffle'
+
+    def hints_status(self, obj):
+        return mark_safe('<span style="color:#28a745;">✓</span>' if obj.hints_enabled else '<span style="color:#aaa;">✗</span>')
+
+    hints_status.short_description = 'Hints'
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        level = obj.get_difficulty_level_display()
+        msg = f"{level} difficulty " + ("updated!" if change else "created!")
+        messages.success(request, msg)
+# [REST OF YOUR ADMIN.PY CODE STAYS THE SAME...]
+# (I'll include the full file below for completeness)
 
 
 # =====================================================
@@ -40,10 +142,15 @@ class DifficultyFilter(admin.SimpleListFilter):
 @admin.register(GameConfig)
 class GameConfigAdmin(admin.ModelAdmin):
     list_display = ('config_version', 'maintenance_mode', 'timer_seconds', 'promo_score_threshold', 'status_badge')
-    readonly_fields = ('config_version',)  # Removed 'updated_at' - field doesn't exist
+    readonly_fields = ('config_version',)
     fieldsets = (
         ('General Settings', {
-            'fields': ('maintenance_mode', 'timer_seconds', 'promo_score_threshold')
+            'fields': ('maintenance_mode', 'timer_seconds', 'promo_score_threshold'),
+            'description': '''
+                <div style="background:#fff3cd;padding:12px;border-radius:8px;margin:10px 0;border-left:4px solid #ffc107;">
+                    <strong>⚠️ Note:</strong> Timer settings are now managed in <a href="../difficultysettings/">Difficulty Settings</a>
+                </div>
+            '''
         }),
         ('Info', {
             'fields': ('config_version',),
@@ -61,6 +168,7 @@ class GameConfigAdmin(admin.ModelAdmin):
             '<span style="background:#28a745;color:white;padding:6px 14px;border-radius:12px;font-weight:600;">'
             'ACTIVE</span>'
         )
+
     status_badge.short_description = 'Status'
 
     def has_add_permission(self, request):
@@ -98,6 +206,7 @@ class FruitCardAdmin(admin.ModelAdmin):
                 obj.image.url
             )
         return mark_safe('<span style="color:#aaa;font-style:italic">No image</span>')
+
     image_preview.short_description = 'Image'
 
     def text_cards_count(self, obj):
@@ -106,16 +215,19 @@ class FruitCardAdmin(admin.ModelAdmin):
         if count == 0:
             return format_html('<a href="{}" style="color:#dc3545;font-weight:600">0</a>', url)
         return format_html('<a href="{}" style="color:#28a745;font-weight:600">{}</a>', url, count)
+
     text_cards_count.short_description = 'Text Cards'
 
     def activate_selected(self, request, queryset):
         updated = queryset.update(is_active=True)
         self.message_user(request, f'{updated} fruit card(s) activated.', messages.SUCCESS)
+
     activate_selected.short_description = 'Activate selected'
 
     def deactivate_selected(self, request, queryset):
         updated = queryset.update(is_active=False)
         self.message_user(request, f'{updated} fruit card(s) deactivated.', messages.WARNING)
+
     deactivate_selected.short_description = 'Deactivate selected'
 
 
@@ -139,6 +251,7 @@ class TextCardAdmin(admin.ModelAdmin):
                 obj.image.url
             )
         return mark_safe('<span style="color:#aaa;font-style:italic">No image</span>')
+
     image_preview.short_description = 'Image'
 
     def activate_selected(self, request, queryset):
@@ -165,8 +278,10 @@ class GameSessionInline(admin.TabularInline):
     def session_link(self, obj):
         if obj.pk:
             url = reverse('admin:core_gamesession_change', args=[obj.pk])
-            return format_html('<a href="{}" target="_blank"><code>{}</code></a>', url, str(obj.session_id)[:12] + '...')
+            return format_html('<a href="{}" target="_blank"><code>{}</code></a>', url,
+                               str(obj.session_id)[:12] + '...')
         return '-'
+
     session_link.short_description = 'Session'
 
     def difficulty_badge(self, obj):
@@ -174,7 +289,9 @@ class GameSessionInline(admin.TabularInline):
         labels = {1: 'Easy', 2: 'Medium', 3: 'Hard', 4: 'Ranked'}
         color = colors.get(obj.difficulty, '#6c757d')
         label = labels.get(obj.difficulty, 'Unknown')
-        return mark_safe(f'<span style="background:{color};color:white;padding:4px 10px;border-radius:8px;font-size:11px;">{label}</span>')
+        return mark_safe(
+            f'<span style="background:{color};color:white;padding:4px 10px;border-radius:8px;font-size:11px;">{label}</span>')
+
     difficulty_badge.short_description = 'Mode'
 
     def duration_display(self, obj):
@@ -182,6 +299,7 @@ class GameSessionInline(admin.TabularInline):
             m, s = divmod(int(obj.duration), 60)
             return f"{m}m {s:02d}s"
         return '-'
+
     duration_display.short_description = 'Time'
 
 
@@ -190,7 +308,8 @@ class GameSessionInline(admin.TabularInline):
 # =====================================================
 @admin.register(Player)
 class PlayerAdmin(admin.ModelAdmin):
-    list_display = ('name', 'phone_number', 'theme', 'language', 'total_sessions', 'best_score_display', 'total_playtime', 'last_login')
+    list_display = ('name', 'phone_number', 'theme', 'language', 'total_sessions', 'best_score_display',
+                    'total_playtime', 'last_login')
     list_filter = ('theme', 'language', 'created_at', 'last_login')
     search_fields = ('name', 'phone_number')
     readonly_fields = ('created_at', 'last_login', 'stats_summary')
@@ -207,6 +326,7 @@ class PlayerAdmin(admin.ModelAdmin):
 
     def total_sessions(self, obj):
         return obj.total_sessions or 0
+
     total_sessions.short_description = 'Sessions'
 
     def best_score_display(self, obj):
@@ -214,6 +334,7 @@ class PlayerAdmin(admin.ModelAdmin):
         if score > 0:
             return mark_safe(f'<strong style="color:#f59e0b;font-size:1.1em">🏆 {score}</strong>')
         return '—'
+
     best_score_display.short_description = 'Best Score'
 
     def total_playtime(self, obj):
@@ -223,11 +344,12 @@ class PlayerAdmin(admin.ModelAdmin):
         if hours > 0:
             return f"{hours}h {minutes}m"
         return f"{minutes}m"
+
     total_playtime.short_description = 'Playtime'
 
     def stats_summary(self, obj):
         sessions = obj.sessions.all()[:100]
-        if not sessions:
+        if (not sessions):
             return mark_safe('<p><em>No games played yet.</em></p>')
 
         stats = sessions.aggregate(
@@ -252,13 +374,15 @@ class PlayerAdmin(admin.ModelAdmin):
         </div>
         """
         return mark_safe(html)
+
     stats_summary.short_description = 'Summary'
 
     def export_as_csv(self, request, queryset):
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="players_{timezone.now().strftime("%Y%m%d")}.csv"'
         writer = csv.writer(response)
-        writer.writerow(['Name', 'Phone', 'Theme', 'Language', 'Sessions', 'Best Score', 'Playtime (sec)', 'Created', 'Last Login'])
+        writer.writerow(
+            ['Name', 'Phone', 'Theme', 'Language', 'Sessions', 'Best Score', 'Playtime (sec)', 'Created', 'Last Login'])
         for player in queryset:
             writer.writerow([
                 player.name,
@@ -272,6 +396,7 @@ class PlayerAdmin(admin.ModelAdmin):
                 player.last_login or '-'
             ])
         return response
+
     export_as_csv.short_description = 'Export Selected as CSV'
 
 
@@ -280,7 +405,8 @@ class PlayerAdmin(admin.ModelAdmin):
 # =====================================================
 @admin.register(GameSession)
 class GameSessionAdmin(admin.ModelAdmin):
-    list_display = ('session_short', 'player_link', 'difficulty_badge', 'score_display', 'duration_display', 'started_at', 'anti_cheat_status')
+    list_display = ('session_short', 'player_link', 'difficulty_badge', 'score_display', 'duration_display',
+                    'started_at', 'anti_cheat_status')
     list_filter = (DifficultyFilter, 'anti_cheat_status', 'started_at', 'ended_at')
     search_fields = ('session_id', 'player__name', 'player__phone_number')
     readonly_fields = ('session_id', 'player', 'started_at', 'ended_at', 'log_json_pretty')
@@ -290,13 +416,16 @@ class GameSessionAdmin(admin.ModelAdmin):
 
     def session_short(self, obj):
         return format_html('<code style="font-size:11px">{}</code>', str(obj.session_id)[:16] + '...')
+
     session_short.short_description = 'Session ID'
 
     def player_link(self, obj):
         if obj.player:
             url = reverse('admin:core_player_change', args=[obj.player.pk])
-            return format_html('<a href="{}"><strong>{}</strong><br><small>{}</small></a>', url, obj.player.name, obj.player.phone_number)
+            return format_html('<a href="{}"><strong>{}</strong><br><small>{}</small></a>', url, obj.player.name,
+                               obj.player.phone_number)
         return '-'
+
     player_link.short_description = 'Player'
 
     def difficulty_badge(self, obj):
@@ -304,11 +433,14 @@ class GameSessionAdmin(admin.ModelAdmin):
         labels = {1: 'Easy', 2: 'Medium', 3: 'Hard', 4: 'Ranked'}
         color = colors.get(obj.difficulty, '#6c757d')
         label = labels.get(obj.difficulty, '?')
-        return mark_safe(f'<span style="background:{color};color:white;padding:5px 12px;border-radius:10px;font-weight:600">{label}</span>')
+        return mark_safe(
+            f'<span style="background:{color};color:white;padding:5px 12px;border-radius:10px;font-weight:600">{label}</span>')
+
     difficulty_badge.short_description = 'Mode'
 
     def score_display(self, obj):
         return format_html('<strong style="font-size:1.2em;color:#007bff">{}</strong>', obj.score_balls)
+
     score_display.short_description = 'Score'
 
     def duration_display(self, obj):
@@ -316,6 +448,7 @@ class GameSessionAdmin(admin.ModelAdmin):
             m, s = divmod(int(obj.duration), 60)
             return f"{m}:{s:02d}"
         return '-'
+
     duration_display.short_description = 'Time'
 
     def log_json_pretty(self, obj):
@@ -329,13 +462,16 @@ class GameSessionAdmin(admin.ModelAdmin):
             except:
                 return 'Invalid JSON'
         return '-'
+
     log_json_pretty.short_description = 'Game Log (JSON)'
 
     def export_as_csv(self, request, queryset):
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="sessions_{timezone.now().strftime("%Y%m%d_%H%M")}.csv"'
+        response[
+            'Content-Disposition'] = f'attachment; filename="sessions_{timezone.now().strftime("%Y%m%d_%H%M")}.csv"'
         writer = csv.writer(response)
-        writer.writerow(['Session ID', 'Player Name', 'Phone', 'Mode', 'Score', 'Duration (s)', 'Started At', 'Anti-Cheat'])
+        writer.writerow(
+            ['Session ID', 'Player Name', 'Phone', 'Mode', 'Score', 'Duration (s)', 'Started At', 'Anti-Cheat'])
         for session in queryset.select_related('player'):
             writer.writerow([
                 session.session_id,
@@ -348,6 +484,7 @@ class GameSessionAdmin(admin.ModelAdmin):
                 session.anti_cheat_status
             ])
         return response
+
     export_as_csv.short_description = 'Export Selected as CSV'
 
     def has_add_permission(self, request):
@@ -355,27 +492,24 @@ class GameSessionAdmin(admin.ModelAdmin):
 
 
 # =====================================================
-# Tournament - Fixed to match your actual model
-# =====================================================
-@admin.register(Tournament)
-class TournamentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'prize_pool', 'active', 'created_at')  # Only existing fields
-    list_filter = ('active', 'created_at')
-    search_fields = ('prize_pool',)
-    readonly_fields = ('created_at',)
-    ordering = ('-created_at',)
-
-    fieldsets = (
-        ('Tournament Details', {
-            'fields': ('prize_pool', 'active')
-        }),
-        ('Metadata', {
-            'fields': ('created_at',),
-        }),
-    )
-
-
-
+# # Tournament
+# # =====================================================
+# @admin.register(Tournament)
+# class TournamentAdmin(admin.ModelAdmin):
+#     list_display = ('id', 'prize_pool', 'active', 'created_at')
+#     list_filter = ('active', 'created_at')
+#     search_fields = ('prize_pool',)
+#     readonly_fields = ('created_at',)
+#     ordering = ('-created_at',)
+#
+#     fieldsets = (
+#         ('Tournament Details', {
+#             'fields': ('prize_pool', 'active')
+#         }),
+#         ('Metadata', {
+#             'fields': ('created_at',),
+#         }),
+#     )
 
 
 # =====================================================
@@ -384,7 +518,3 @@ class TournamentAdmin(admin.ModelAdmin):
 admin.site.site_header = 'Fruit Match Game - Admin Panel'
 admin.site.site_title = 'Fruit Game Admin'
 admin.site.index_title = 'Welcome to Game Management Dashboard'
-
-
-
-

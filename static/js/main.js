@@ -2,14 +2,6 @@
 
 // Entry Point
 const api = new API();
-// UI class is not provided in the prompt but main.js references it.
-// I will create a dummy UI class in ui.js or assume it exists in ui.js
-// Since I need to create all files, I must implement UI.js or inline it.
-// The prompt references `static/js/ui.js` in index.html.
-// But the user did not provide `ui.js` content.
-// I will create a basic UI class here or separate file if I can.
-// Wait, the prompt provided main.js which references `UI`.
-// I will write main.js as provided.
 
 // Global user state
 let currentUser = null;
@@ -110,7 +102,7 @@ window.onload = () => {
 
     // Check if user is already logged in
     checkExistingLogin();
-    
+
     // Load pending tickets
     if (typeof loadPendingTickets === 'function') {
         loadPendingTickets();
@@ -158,12 +150,41 @@ window.shuffleBoard = () => {
 // Helper function to get current user
 window.getCurrentUser = () => currentUser;
 
-// Logout function
+// Logout function with custom multilingual modal
 window.logout = () => {
-  if (confirm("Are you sure you want to logout?")) {
+  const lang = localStorage.getItem('lang') || 'en';
+  const dict = window.I18N[lang];
+
+  // Create custom modal
+  const modal = document.createElement('div');
+  modal.className = 'custom-confirm-modal';
+  modal.innerHTML = `
+    <div class="custom-confirm-overlay"></div>
+    <div class="custom-confirm-box">
+      <h3>${dict.logout_confirm_title}</h3>
+      <div class="custom-confirm-buttons">
+        <button class="btn-confirm-cancel" id="confirm-cancel">${dict.logout_confirm_cancel}</button>
+        <button class="btn-confirm-ok" id="confirm-ok">${dict.logout_confirm_ok}</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // Add event listeners
+  document.getElementById('confirm-ok').onclick = () => {
     localStorage.removeItem("player_name");
     localStorage.removeItem("player_phone");
     currentUser = null;
     location.reload();
-  }
+  };
+
+  document.getElementById('confirm-cancel').onclick = () => {
+    modal.remove();
+  };
+
+  // Close on overlay click
+  modal.querySelector('.custom-confirm-overlay').onclick = () => {
+    modal.remove();
+  };
 };

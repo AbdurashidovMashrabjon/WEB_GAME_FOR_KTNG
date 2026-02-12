@@ -19,6 +19,10 @@ from .serializers import (
 )
 
 
+from django.http import JsonResponse
+from .models import DifficultySettings
+
+
 # ====================== CONFIG ======================
 class ConfigView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -253,5 +257,108 @@ class TournamentView(APIView):
 
 
 
+def get_difficulty_settings(request):
+    """
+    API endpoint to fetch all difficulty settings.
+    Frontend will use this to get dynamic game parameters.
+    """
+    settings = DifficultySettings.objects.filter(is_active=True).order_by('order')
+
+    data = []
+    for setting in settings:
+        data.append({
+            'difficulty_level': setting.difficulty_level,
+            'names': {
+                'en': setting.name_en,
+                'uz': setting.name_uz,
+                'ru': setting.name_ru,
+            },
+            'descriptions': {
+                'en': setting.description_en,
+                'uz': setting.description_uz,
+                'ru': setting.description_ru,
+            },
+            'parameters': {
+                'time_seconds': setting.time_seconds,
+                'base_points': setting.base_points,
+                'level_multiplier': setting.level_multiplier,
+                'combo_bonus': setting.combo_bonus_per_match,
+                'combo_penalty': setting.combo_penalty_on_wrong,
+                'shuffle_enabled': setting.shuffle_enabled,
+                'shuffle_frequency': setting.shuffle_frequency,
+                'hints_enabled': setting.hints_enabled,
+            },
+            'visual': {
+                'card_color_text': setting.card_color_text,
+                'card_color_fruit': setting.card_color_fruit,
+            }
+        })
+
+    return JsonResponse({
+        'success': True,
+        'difficulty_settings': data
+    })
+
+
+# Add this to your existing config endpoint (or modify it)
+def get_config(request):
+    """
+    Modified config endpoint that includes difficulty settings
+    """
+    from .models import GameConfig, FruitCard, TextCard, DifficultySettings
+
+    config = GameConfig.load()
+
+    # Get difficulty settings
+    difficulty_settings = DifficultySettings.objects.filter(is_active=True).order_by('order')
+
+    difficulty_data = []
+    for setting in difficulty_settings:
+        difficulty_data.append({
+            'level': setting.difficulty_level,
+            'names': {
+                'en': setting.name_en,
+                'uz': setting.name_uz,
+                'ru': setting.name_ru,
+            },
+            'descriptions': {
+                'en': setting.description_en,
+                'uz': setting.description_uz,
+                'ru': setting.description_ru,
+            },
+            'time_seconds': setting.time_seconds,
+            'base_points': setting.base_points,
+            'level_multiplier': setting.level_multiplier,
+            'combo_bonus': setting.combo_bonus_per_match,
+            'combo_penalty': setting.combo_penalty_on_wrong,
+            'shuffle_enabled': setting.shuffle_enabled,
+            'shuffle_frequency': setting.shuffle_frequency,
+            'hints_enabled': setting.hints_enabled,
+            'card_color_text': setting.card_color_text,
+            'card_color_fruit': setting.card_color_fruit,
+        })
+
+    # Get active cards
+    fruits = list(FruitCard.objects.filter(is_active=True).values(
+        'id', 'title', 'code', 'image', 'weight'
+    ))
+
+    texts = list(TextCard.objects.filter(is_active=True).select_related('correct_fruit').values(
+        'id', 'title', 'code', 'image', 'weight', 'correct_fruit__code'
+    ))
+
+    # Rename correct_fruit__code to correct_fruit_code
+    for text in texts:
+        text['correct_fruit_code'] = text.pop('correct_fruit__code')
+
+    return JsonResponse({
+        'config': {
+            'maintenance_mode': config.maintenance_mode,
+            'promo_score_threshold': config.promo_score_threshold,
+        },
+        'difficulty_settings': difficulty_data,
+        'fruit_cards': fruits,
+        'text_cards': texts
+    })
 
 
