@@ -101,7 +101,7 @@ class API {
      * @returns {Promise<{config: object, fruit_cards: array, text_cards: array}>}
      */
     async getConfig() {
-        return this._fetch(`${this.baseURL}/config/`);
+        return this._fetch(`${this.baseURL}/game/config/`);
     }
 
     /**

@@ -1,4 +1,4 @@
-// static/js/game.js - DYNAMIC DIFFICULTY VERSION (Admin-Controlled)
+// static/js/game.js - REAL-TIME ADMIN SYNC VERSION (Full original code + fixes)
 
 class Game {
     constructor(api, ui) {
@@ -8,12 +8,13 @@ class Game {
         this.fruitCards = [];
         this.textCards = [];
         this.validPairs = [];
-        this.difficultySettings = {}; // NEW: Store admin-configured settings
+        this.difficultySettings = {}; // Admin-configured, fetched fresh each time
+        this.lastFetchTimestamp = 0; // For light caching
 
         this.sessionId = null;
-        this.difficultyLevel = 1;
+        this.difficultyLevel = null; // Set by UI selection
 
-        // Dynamic values (loaded from admin)
+        // Dynamic values loaded from admin
         this.basePoints = 5;
         this.levelMultiplier = 2;
         this.comboBonus = 1.5;
@@ -28,111 +29,132 @@ class Game {
         this.timer = 0;
         this.timerInterval = null;
         this.isPaused = false;
+        this.pollingInterval = null; // Optional real-time polling
 
         this.allCards = [];
         this.selectedTextIndex = null;
         this.selectedFruitIndex = null;
 
         this.stats = { correct: 0, wrong: 0, bestCombo: 0 };
-        this.CARDS_PER_GAME = 8; // 8 pairs = 16 cards total
+        this.CARDS_PER_GAME = 8;
 
         this.isProcessing = false;
         this.revealedTextCards = new Set();
-        this.shuffleInterval = null; // NEW: For auto-shuffle
+        this.shuffleInterval = null;
+
+        // Set to true if you want mid-game difficulty updates (every 30 seconds)
+        this.ENABLE_POLLING = false;
     }
 
-    async load() {
+    // ────────────────────────────────────────────────
+    //                  LOAD & SYNC
+    // ────────────────────────────────────────────────
+
+    async load(refresh = false) {
+        const now = Date.now();
+        if (!refresh && (now - this.lastFetchTimestamp < 5000)) {
+            console.log('[Game] Using cached config (age < 5s)');
+            return true;
+        }
+
+        this.lastFetchTimestamp = now;
+        console.log('[Game] Fetching fresh game config...');
+
         try {
             const data = await this.api.getConfig();
+
             this.config = data.config || {};
             this.fruitCards = data.fruit_cards || [];
             this.textCards = data.text_cards || [];
 
-            // NEW: Load difficulty settings from admin
+            // Load difficulty settings
             this.difficultySettings = {};
             (data.difficulty_settings || []).forEach(setting => {
-                this.difficultySettings[setting.level] = setting;
+                if (setting.is_active !== false) {
+                    this.difficultySettings[setting.level] = {
+                        level: setting.level,
+                        time_seconds: setting.time_seconds || 180,
+                        base_points: setting.base_points || 5,
+                        level_multiplier: setting.level_multiplier || 2,
+                        combo_bonus: setting.combo_bonus || 1.5,
+                        combo_penalty: setting.combo_penalty || 0.5,
+                        shuffle_enabled: setting.shuffle_enabled || false,
+                        shuffle_frequency: setting.shuffle_frequency || 0,
+                        hints_enabled: setting.hints_enabled || true,
+                        name_en: setting.names?.en || `Level ${setting.level}`,
+                        // You can add name_uz, name_ru if needed for UI
+                    };
+                }
             });
 
-            console.log('Loaded difficulty settings:', this.difficultySettings);
+            console.log('[Game] Loaded difficulties:', Object.keys(this.difficultySettings));
+
+            if (Object.keys(this.difficultySettings).length === 0) {
+                throw new Error('No active difficulty settings found from server');
+            }
 
             this.buildValidPairs();
+
+            // Optional: tell UI to refresh difficulty buttons
+            if (this.ui.updateDifficultyButtons) {
+                this.ui.updateDifficultyButtons(this.difficultySettings);
+            }
+
+            return true;
         } catch (e) {
-            console.warn("API failed, using dev mode", e);
-            this.loadDevModeData();
+            console.error('[Game] Load failed:', e);
+            this.showErrorOverlay('Unable to load game settings. Please check your connection or refresh.');
+            return false;
         }
     }
 
     buildValidPairs() {
         this.validPairs = this.fruitCards
+            .filter(f => f.is_active !== false)
             .map(fruit => {
                 const text = this.textCards.find(t =>
-                    t.correct_fruit_code === fruit.code &&
+                    t.correct_fruit?.code === fruit.code &&
                     t.is_active !== false
                 );
                 return text ? { fruit, text } : null;
             })
             .filter(Boolean);
+
+        console.log('[Game] Valid pairs count:', this.validPairs.length);
     }
 
-    loadDevModeData() {
-        this.validPairs = [];
-        const names = [
-            'Apple', 'Banana', 'Orange', 'Mango',
-            'Peach', 'Lemon', 'Strawberry', 'Kiwi',
-            'Grape', 'Watermelon', 'Pineapple', 'Cherry'
-        ];
-
-        names.forEach((name, i) => {
-            const code = `f${i}`;
-            const fruit = {
-                id: i,
-                code,
-                title: name,
-                image: null
-            };
-            const text = {
-                id: i,
-                title: `This is ${name}`,
-                correct_fruit_code: code,
-                image: null
-            };
-            this.validPairs.push({ fruit, text });
-        });
-
-        // Default settings for dev mode
-        this.difficultySettings = {
-            1: { level: 1, time_seconds: 180, base_points: 5, level_multiplier: 2, combo_bonus: 1.5, combo_penalty: 0.5, shuffle_enabled: false, hints_enabled: true },
-            2: { level: 2, time_seconds: 150, base_points: 15, level_multiplier: 4, combo_bonus: 1.5, combo_penalty: 0.5, shuffle_enabled: true, shuffle_frequency: 15, hints_enabled: false },
-            3: { level: 3, time_seconds: 120, base_points: 20, level_multiplier: 6, combo_bonus: 1.5, combo_penalty: 0.5, shuffle_enabled: true, shuffle_frequency: 8, hints_enabled: false }
-        };
-    }
+    // ────────────────────────────────────────────────
+    //                  START & SELECTION
+    // ────────────────────────────────────────────────
 
     async start() {
-        this.difficultyLevel = this.ui.selectedLevel || 1;
-
-        // NEW: Load settings for selected difficulty from admin
-        const settings = this.difficultySettings[this.difficultyLevel];
-        if (settings) {
-            this.timeSeconds = settings.time_seconds;
-            this.basePoints = settings.base_points;
-            this.levelMultiplier = settings.level_multiplier;
-            this.comboBonus = settings.combo_bonus;
-            this.comboPenalty = settings.combo_penalty;
-            this.shuffleEnabled = settings.shuffle_enabled;
-            this.shuffleFrequency = settings.shuffle_frequency;
-            this.hintsEnabled = settings.hints_enabled;
-
-            console.log(`Starting ${this.difficultyLevel} with settings:`, settings);
-        } else {
-            console.warn('No settings found for difficulty', this.difficultyLevel);
+        if (!this.difficultyLevel || !this.difficultySettings[this.difficultyLevel]) {
+            this.showErrorOverlay('Please select a valid difficulty level first.');
+            return;
         }
+
+        // Always refetch fresh data before starting a new game
+        const loaded = await this.load(true);
+        if (!loaded) return;
+
+        const settings = this.difficultySettings[this.difficultyLevel];
+
+        this.timeSeconds = settings.time_seconds;
+        this.basePoints = settings.base_points;
+        this.levelMultiplier = settings.level_multiplier;
+        this.comboBonus = settings.combo_bonus;
+        this.comboPenalty = settings.combo_penalty;
+        this.shuffleEnabled = settings.shuffle_enabled;
+        this.shuffleFrequency = settings.shuffle_frequency;
+        this.hintsEnabled = settings.hints_enabled;
+
+        console.log(`[Game] Starting Level ${this.difficultyLevel} with admin settings:`, settings);
 
         try {
             const data = await this.api.startSession('ranked');
             this.sessionId = data.session_id;
         } catch (e) {
-            console.warn("Offline mode", e);
+            console.warn('[Game] Session start failed (offline mode?):', e);
         }
 
         this.reset();
@@ -146,16 +168,84 @@ class Game {
 
         this.startTimer();
 
-        // NEW: Start auto-shuffle if enabled
         if (this.shuffleEnabled && this.shuffleFrequency > 0) {
             this.startAutoShuffle();
         }
+
+        if (this.ENABLE_POLLING) {
+            this.startPolling();
+        }
     }
+
+    // Public method for UI buttons to call
+    selectDifficulty(level) {
+        this.difficultyLevel = parseInt(level);
+        console.log(`[Game] Difficulty selected: ${this.difficultyLevel}`);
+
+        if (this.difficultySettings[this.difficultyLevel]) {
+            if (this.ui.onDifficultySelect) {
+                this.ui.onDifficultySelect(this.difficultyLevel, this.difficultySettings[this.difficultyLevel]);
+            }
+            // You can auto-start or show "Start" button here
+        } else {
+            this.showErrorOverlay(`Difficulty level ${level} is not available yet.`);
+        }
+    }
+
+    // ────────────────────────────────────────────────
+    //                  POLLING (optional)
+    // ────────────────────────────────────────────────
+
+    startPolling() {
+        if (this.pollingInterval) clearInterval(this.pollingInterval);
+        this.pollingInterval = setInterval(async () => {
+            console.log('[Game] Polling for admin updates...');
+            await this.load(true);
+        }, 30000);
+    }
+
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
+    }
+
+    // ────────────────────────────────────────────────
+    //                  ERROR UI
+    // ────────────────────────────────────────────────
+
+    showErrorOverlay(message) {
+        let overlay = document.getElementById('game-error-overlay');
+        if (overlay) overlay.remove();
+
+        overlay = document.createElement('div');
+        overlay.id = 'game-error-overlay';
+        overlay.style.cssText = `
+            position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+            color: white; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 9999;
+            font-family: system-ui, sans-serif; text-align: center; padding: 20px;
+        `;
+        overlay.innerHTML = `
+            <h2 style="font-size: 2.2rem; margin-bottom: 1rem;">⚠️ ${message}</h2>
+            <button onclick="location.reload()" style="
+                padding: 14px 32px; font-size: 1.2rem; background: #4caf50;
+                color: white; border: none; border-radius: 12px; cursor: pointer;
+                margin-top: 1.5rem;
+            ">Refresh Game</button>
+        `;
+        document.body.appendChild(overlay);
+    }
+
+    // ────────────────────────────────────────────────
+    //                  YOUR ORIGINAL METHODS (unchanged)
+    // ────────────────────────────────────────────────
 
     reset() {
         this.score = 0;
         this.combo = 0;
-        this.timer = this.timeSeconds; // Use dynamic time from admin
+        this.timer = this.timeSeconds;
         this.isPaused = false;
         this.isProcessing = false;
         this.selectedTextIndex = null;
@@ -163,18 +253,18 @@ class Game {
         this.revealedTextCards = new Set();
         this.stats = { correct: 0, wrong: 0, bestCombo: 0 };
 
-        // Clear any existing shuffle interval
         if (this.shuffleInterval) {
             clearInterval(this.shuffleInterval);
             this.shuffleInterval = null;
         }
+
+        this.stopPolling();
 
         this.updateHUD();
         this.generateBoard();
         this.resetPauseButton();
     }
 
-    // NEW: Auto-shuffle functionality
     startAutoShuffle() {
         if (this.shuffleInterval) {
             clearInterval(this.shuffleInterval);
@@ -209,8 +299,8 @@ class Game {
         if (this.validPairs.length < this.CARDS_PER_GAME) {
             grid.innerHTML = `
                 <div style="color:#fff;padding:40px;text-align:center;grid-column:1/-1;">
-                    <p style="font-size:20px;">Not enough cards!</p>
-                    <p>Need at least ${this.CARDS_PER_GAME} pairs.</p>
+                    <p style="font-size:20px;">Not enough cards available!</p>
+                    <p>Need at least ${this.CARDS_PER_GAME} pairs. Please contact support.</p>
                 </div>
             `;
             return;
@@ -238,7 +328,6 @@ class Game {
             });
         });
 
-        // Show hint if enabled by admin
         if (this.hintsEnabled) {
             setTimeout(() => this.showHintPair(), 500);
         }
@@ -444,7 +533,6 @@ class Game {
     }
 
     handleSuccess() {
-        // NEW: Use admin-configured scoring
         const points = this.basePoints + this.levelMultiplier + Math.floor(this.combo * this.comboBonus);
 
         this.score += points;
@@ -502,7 +590,6 @@ class Game {
     }
 
     handleFailure() {
-        // NEW: Use admin-configured penalty
         this.combo = Math.floor(this.combo * this.comboPenalty);
         this.stats.wrong++;
 
@@ -574,27 +661,8 @@ class Game {
 
             const el = slot.el;
             el.className = 'card text-card hidden-card';
-            el.style.cssText = `
-                width: 85px;
-                height: 110px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: transform 0.2s ease, box-shadow 0.2s ease;
-                font-size: 11px;
-                font-weight: 600;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-                transform: scale(1);
-                opacity: 1;
-                padding: 4px;
-                box-sizing: border-box;
-                position: relative;
-                overflow: hidden;
-                flex-shrink: 0;
-            `;
+            el.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            el.style.transform = 'scale(1)';
             el.innerHTML = `
                 <div class="question-mark" style="font-size:28px;color:white;">
                     <i class="fas fa-question"></i>
@@ -622,29 +690,9 @@ class Game {
 
             const el = slot.el;
             el.className = 'card fruit-card';
-            el.style.cssText = `
-                width: 85px;
-                height: 110px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: transform 0.2s ease, box-shadow 0.2s ease;
-                font-size: 11px;
-                font-weight: 600;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
-                transform: scale(1);
-                opacity: 1;
-                padding: 4px;
-                box-sizing: border-box;
-                position: relative;
-                overflow: hidden;
-                flex-shrink: 0;
-            `;
+            el.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+            el.style.transform = 'scale(1)';
             el.innerHTML = '';
-            el.dataset.pairCode = newPair.fruit.code;
 
             if (newFruitCard.image) {
                 const img = document.createElement('img');
@@ -660,6 +708,7 @@ class Game {
             } else {
                 el.innerHTML = `<span style="color:white;padding:4px;text-align:center;font-size:10px;line-height:1.2;word-break:break-word;">${newFruitCard.title || 'Fruit'}</span>`;
             }
+            el.dataset.pairCode = newPair.fruit.code;
         }
 
         this.selectedTextIndex = null;
@@ -818,8 +867,8 @@ class Game {
 
     async endGame() {
         clearInterval(this.timerInterval);
+        this.stopPolling();
 
-        // NEW: Clear shuffle interval
         if (this.shuffleInterval) {
             clearInterval(this.shuffleInterval);
             this.shuffleInterval = null;
@@ -917,7 +966,7 @@ class Game {
                     }
                 }
             } catch (error) {
-                console.error("Failed to submit score:", error);
+                console.error("[Game] Failed to submit score:", error);
             }
         }
     }
@@ -936,7 +985,10 @@ class Game {
     }
 }
 
-// CSS animations
+// ────────────────────────────────────────────────
+//                  CSS ANIMATIONS (unchanged)
+// ────────────────────────────────────────────────
+
 const style = document.createElement('style');
 style.textContent = `
     @keyframes pulse {
@@ -1015,3 +1067,7 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+
+
+

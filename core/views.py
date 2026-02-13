@@ -23,7 +23,6 @@ from django.http import JsonResponse
 from .models import DifficultySettings
 
 
-# ====================== CONFIG ======================
 class ConfigView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -32,12 +31,29 @@ class ConfigView(APIView):
         fruits = FruitCard.objects.filter(is_active=True)
         texts = TextCard.objects.filter(is_active=True)
 
+        # Get difficulty settings
+        difficulty_settings = DifficultySettings.objects.filter(is_active=True).order_by('order')
+
+        difficulty_data = []
+        for setting in difficulty_settings:
+            difficulty_data.append({
+                'level': setting.difficulty_level,
+                'time_seconds': setting.time_seconds,
+                'base_points': setting.base_points,
+                'level_multiplier': setting.level_multiplier,
+                'combo_bonus': setting.combo_bonus_per_match,
+                'combo_penalty': setting.combo_penalty_on_wrong,
+                'shuffle_enabled': setting.shuffle_enabled,
+                'shuffle_frequency': setting.shuffle_frequency,
+                'hints_enabled': setting.hints_enabled,
+            })
+
         return Response({
             "config": GameConfigSerializer(config).data,
             "fruit_cards": FruitCardSerializer(fruits, many=True, context={'request': request}).data,
             "text_cards": TextCardSerializer(texts, many=True, context={'request': request}).data,
+            "difficulty_settings": difficulty_data,  # ← ADD THIS LINE
         })
-
 
 # ====================== SESSION START ======================
 class SessionStartView(APIView):

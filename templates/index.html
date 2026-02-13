@@ -1,4 +1,4 @@
-<!--templates/index.html-->
+<!-- templates/index.html -->
 {% load static %}
 <!DOCTYPE html>
 <html lang="en">
@@ -286,15 +286,15 @@
         <h2 data-i18n="select_level">Select Difficulty</h2>
 
         <div class="level-grid">
-            <button class="btn-level-large easy" onclick="startGameWithLevel(1)">
+            <button class="btn-level-large easy" onclick="game.selectDifficulty(1)">
                 <span data-i18n="level_easy">Easy</span>
                 <small>5 Points + Hints</small>
             </button>
-            <button class="btn-level-large medium" onclick="startGameWithLevel(2)">
+            <button class="btn-level-large medium" onclick="game.selectDifficulty(2)">
                 <span data-i18n="level_medium">Medium</span>
                 <small>15 Points + Shuffles</small>
             </button>
-            <button class="btn-level-large hard" onclick="startGameWithLevel(3)">
+            <button class="btn-level-large hard" onclick="game.selectDifficulty(3)">
                 <span data-i18n="level_hard">Hard</span>
                 <small>20 Points + Fast Shuffles</small>
             </button>
@@ -401,6 +401,9 @@ function toggleInstructions() {
     const modal = document.getElementById('instructions-modal');
     modal.classList.toggle('hidden');
 }
+
+// Make sure game instance exists globally
+window.game = window.game || new Game(new API(), window.ui || {});
 </script>
 
 </body>
