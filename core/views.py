@@ -1,4 +1,4 @@
-# core/views.py - FINAL PRODUCTION VERSION (December 2025)
+# core/views.py - COMPLETE FIXED VERSION
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -9,7 +9,7 @@ from django.db import transaction
 import traceback
 from .models import (
     GameConfig, FruitCard, TextCard, GameSession,
-    Player, Tournament
+    Player, Tournament, DifficultySettings
 )
 from .serializers import (
     GameConfigSerializer, FruitCardSerializer, TextCardSerializer,
@@ -18,11 +18,10 @@ from .serializers import (
     PlayerSettingsSerializer, TournamentSerializer
 )
 
-
 from django.http import JsonResponse
-from .models import DifficultySettings
 
 
+# ====================== CONFIG (FIXED - RETURNS DIFFICULTY SETTINGS) ======================
 class ConfigView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -31,13 +30,13 @@ class ConfigView(APIView):
         fruits = FruitCard.objects.filter(is_active=True)
         texts = TextCard.objects.filter(is_active=True)
 
-        # Get difficulty settings
+        # ✅ Get difficulty settings from admin panel
         difficulty_settings = DifficultySettings.objects.filter(is_active=True).order_by('order')
 
         difficulty_data = []
         for setting in difficulty_settings:
             difficulty_data.append({
-                'level': setting.difficulty_level,
+                'level': setting.difficulty_level,  # ← KEY FIX: Use 'level' not 'difficulty_level'
                 'time_seconds': setting.time_seconds,
                 'base_points': setting.base_points,
                 'level_multiplier': setting.level_multiplier,
@@ -46,26 +45,38 @@ class ConfigView(APIView):
                 'shuffle_enabled': setting.shuffle_enabled,
                 'shuffle_frequency': setting.shuffle_frequency,
                 'hints_enabled': setting.hints_enabled,
+                'is_active': setting.is_active,
+                'order': setting.order,
+                'names': {
+                    'en': setting.name_en,
+                    'uz': setting.name_uz,
+                    'ru': setting.name_ru,
+                },
+                'descriptions': {
+                    'en': setting.description_en,
+                    'uz': setting.description_uz,
+                    'ru': setting.description_ru,
+                }
             })
 
         return Response({
             "config": GameConfigSerializer(config).data,
             "fruit_cards": FruitCardSerializer(fruits, many=True, context={'request': request}).data,
             "text_cards": TextCardSerializer(texts, many=True, context={'request': request}).data,
-            "difficulty_settings": difficulty_data,  # ← ADD THIS LINE
+            "difficulty_settings": difficulty_data,  # ← KEY FIX: Added this line
         })
+
 
 # ====================== SESSION START ======================
 class SessionStartView(APIView):
     permission_classes = [permissions.AllowAny]
 
-    # Map frontend mode strings to integer difficulty values
     DIFFICULTY_MAP = {
         "easy": 1,
         "medium": 2,
         "hard": 3,
         "ranked": 4,
-        "training": 4,  # fallback if needed
+        "training": 4,
     }
 
     def post(self, request):
@@ -77,10 +88,8 @@ class SessionStartView(APIView):
         name = serializer.validated_data["name"]
         mode = serializer.validated_data.get("mode", "ranked").lower()
 
-        # Convert mode string to integer difficulty
-        difficulty = self.DIFFICULTY_MAP.get(mode, 4)  # default to ranked = 4
+        difficulty = self.DIFFICULTY_MAP.get(mode, 4)
 
-        # Get or create player
         player, created = Player.objects.get_or_create(
             phone_number=phone,
             defaults={"name": name}
@@ -91,10 +100,8 @@ class SessionStartView(APIView):
         player.last_login = timezone.now()
         player.save()
 
-        # Log in the player
         login(request, player, backend='django.contrib.auth.backends.ModelBackend')
 
-        # Create session with INTEGER difficulty
         session = GameSession.objects.create(
             player=player,
             difficulty=difficulty
@@ -121,7 +128,7 @@ class SessionFinishView(APIView):
         try:
             session = GameSession.objects.select_related('player').get(
                 session_id=session_id,
-                player=request.user  # Security: only own session
+                player=request.user
             )
         except GameSession.DoesNotExist:
             return Response({"error": "Session not found or not yours"}, status=status.HTTP_404_NOT_FOUND)
@@ -129,7 +136,6 @@ class SessionFinishView(APIView):
         if session.ended_at:
             return Response({"error": "Session already finished"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Update session
         session.score_balls = serializer.validated_data["score_balls"]
         session.duration = serializer.validated_data["duration"]
         session.correct_count = serializer.validated_data.get("correct_count", 0)
@@ -169,14 +175,13 @@ class SessionFinishView(APIView):
 class LeaderboardView(APIView):
     permission_classes = [permissions.AllowAny]
 
-    # Integer values for difficulty
     DIFFICULTY_MAP = {
         "easy": 1,
         "medium": 2,
         "hard": 3,
         "ranked": 4,
     }
-    DEFAULT_DIFFICULTY = 4  # Ranked leaderboard by default
+    DEFAULT_DIFFICULTY = 4
 
     def get(self, request):
         difficulty_param = request.query_params.get("difficulty")
@@ -198,9 +203,8 @@ class LeaderboardView(APIView):
             except ValueError:
                 return Response({"error": "Invalid difficulty value"}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            qs = qs.filter(difficulty=self.DEFAULT_DIFFICULTY)  # Only ranked by default
+            qs = qs.filter(difficulty=self.DEFAULT_DIFFICULTY)
 
-        # Top 10: highest score, then fastest (lowest duration)
         top_10 = qs.order_by('-score_balls', 'duration')[:10]
 
         return Response(LeaderboardEntrySerializer(top_10, many=True).data)
@@ -272,109 +276,5 @@ class TournamentView(APIView):
         return Response(TournamentSerializer(tournaments, many=True).data)
 
 
-
-def get_difficulty_settings(request):
-    """
-    API endpoint to fetch all difficulty settings.
-    Frontend will use this to get dynamic game parameters.
-    """
-    settings = DifficultySettings.objects.filter(is_active=True).order_by('order')
-
-    data = []
-    for setting in settings:
-        data.append({
-            'difficulty_level': setting.difficulty_level,
-            'names': {
-                'en': setting.name_en,
-                'uz': setting.name_uz,
-                'ru': setting.name_ru,
-            },
-            'descriptions': {
-                'en': setting.description_en,
-                'uz': setting.description_uz,
-                'ru': setting.description_ru,
-            },
-            'parameters': {
-                'time_seconds': setting.time_seconds,
-                'base_points': setting.base_points,
-                'level_multiplier': setting.level_multiplier,
-                'combo_bonus': setting.combo_bonus_per_match,
-                'combo_penalty': setting.combo_penalty_on_wrong,
-                'shuffle_enabled': setting.shuffle_enabled,
-                'shuffle_frequency': setting.shuffle_frequency,
-                'hints_enabled': setting.hints_enabled,
-            },
-            'visual': {
-                'card_color_text': setting.card_color_text,
-                'card_color_fruit': setting.card_color_fruit,
-            }
-        })
-
-    return JsonResponse({
-        'success': True,
-        'difficulty_settings': data
-    })
-
-
-# Add this to your existing config endpoint (or modify it)
-def get_config(request):
-    """
-    Modified config endpoint that includes difficulty settings
-    """
-    from .models import GameConfig, FruitCard, TextCard, DifficultySettings
-
-    config = GameConfig.load()
-
-    # Get difficulty settings
-    difficulty_settings = DifficultySettings.objects.filter(is_active=True).order_by('order')
-
-    difficulty_data = []
-    for setting in difficulty_settings:
-        difficulty_data.append({
-            'level': setting.difficulty_level,
-            'names': {
-                'en': setting.name_en,
-                'uz': setting.name_uz,
-                'ru': setting.name_ru,
-            },
-            'descriptions': {
-                'en': setting.description_en,
-                'uz': setting.description_uz,
-                'ru': setting.description_ru,
-            },
-            'time_seconds': setting.time_seconds,
-            'base_points': setting.base_points,
-            'level_multiplier': setting.level_multiplier,
-            'combo_bonus': setting.combo_bonus_per_match,
-            'combo_penalty': setting.combo_penalty_on_wrong,
-            'shuffle_enabled': setting.shuffle_enabled,
-            'shuffle_frequency': setting.shuffle_frequency,
-            'hints_enabled': setting.hints_enabled,
-            'card_color_text': setting.card_color_text,
-            'card_color_fruit': setting.card_color_fruit,
-        })
-
-    # Get active cards
-    fruits = list(FruitCard.objects.filter(is_active=True).values(
-        'id', 'title', 'code', 'image', 'weight'
-    ))
-
-    texts = list(TextCard.objects.filter(is_active=True).select_related('correct_fruit').values(
-        'id', 'title', 'code', 'image', 'weight', 'correct_fruit__code'
-    ))
-
-    # Rename correct_fruit__code to correct_fruit_code
-    for text in texts:
-        text['correct_fruit_code'] = text.pop('correct_fruit__code')
-
-    return JsonResponse({
-        'config': {
-            'maintenance_mode': config.maintenance_mode,
-            'promo_score_threshold': config.promo_score_threshold,
-        },
-        'difficulty_settings': difficulty_data,
-        'fruit_cards': fruits,
-        'text_cards': texts
-    })
 
 

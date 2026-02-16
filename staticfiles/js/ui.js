@@ -1,4 +1,4 @@
-// static/js/ui.js - Clean version with History only
+// static/js/ui.js - FIXED to work with admin-configured difficulty settings
 
 class UI {
     constructor(api) {
@@ -63,9 +63,9 @@ class UI {
         const screen = document.getElementById(id);
         if (screen) screen.classList.remove('hidden');
 
-        // NEW: Dynamically populate level selection when showing level screen
+        // NEW: Update level buttons when showing level screen
         if (id === 'level-screen') {
-            this.showLevelSelect();
+            this.updateLevelButtons();
         }
 
         // Music control
@@ -121,77 +121,63 @@ class UI {
         }
     }
 
-    async showLeaderboard() {
-        this.showScreen('leaderboard-screen');
-        const list = document.getElementById('leaderboard-list');
-        list.innerHTML = '<li class="loading">Loading...</li>';
-
-        try {
-            const entries = await this.api.getLeaderboard();
-            list.innerHTML = entries.length === 0
-                ? '<li class="empty">No scores yet</li>'
-                : entries.map((e, i) => `
-                    <li style="animation-delay: ${i * 0.05}s; opacity: 0;">
-                        <span class="rank">${i + 1}</span>
-                        <span class="name">${e.name}</span>
-                        <span class="score">${e.score_balls} pts</span>
-                    </li>
-                `).join('');
-        } catch (e) {
-            list.innerHTML = '<li class="error">Failed to load</li>';
-        }
-    }
-
-    // NEW: Show dynamic level selection with admin-configured settings
-    showLevelSelect() {
-        this.showScreen('level-screen');
-
+    // NEW: Update level buttons based on admin-configured settings
+    updateLevelButtons() {
         // Get difficulty settings from game
         const settings = window.game?.difficultySettings || {};
-        const settingsArray = Object.values(settings)
-            .sort((a, b) => (a.order || a.level) - (b.order || b.level));
 
-        const container = document.getElementById('level-buttons-container');
-        if (!container) return;
+        console.log('Updating level buttons with settings:', settings);
 
-        if (settingsArray.length === 0) {
-            // Fallback to default buttons if no settings loaded yet
-            container.innerHTML = `
-                <button class="level-btn easy" onclick="startGameWithLevel(1)">
-                    <h3>Easy</h3>
-                    <p>5 Points + Hints</p>
-                </button>
-                <button class="level-btn medium" onclick="startGameWithLevel(2)">
-                    <h3>Medium</h3>
-                    <p>15 Points + Shuffles</p>
-                </button>
-                <button class="level-btn hard" onclick="startGameWithLevel(3)">
-                    <h3>Hard</h3>
-                    <p>20 Points + Fast Shuffles</p>
-                </button>
-            `;
-            return;
-        }
+        // Get the existing buttons in the level-grid
+        const buttons = document.querySelectorAll('.level-grid .btn-level-large');
 
-        // Build buttons from admin settings
-        const colors = {
-            1: 'easy',    // green
-            2: 'medium',  // orange
-            3: 'hard'     // red
-        };
+        buttons.forEach((btn, index) => {
+            const level = index + 1; // Easy=1, Medium=2, Hard=3
+            const setting = settings[level];
 
-        container.innerHTML = settingsArray.map(setting => {
-            const name = setting.names?.[this.currentLang] || setting.name_en || 'Unknown';
-            const desc = setting.descriptions?.[this.currentLang] || setting.description_en || '';
-            const colorClass = colors[setting.level] || 'easy';
+            if (setting) {
+                // Level exists in admin panel - enable button
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+                btn.style.filter = 'none';
 
-            return `
-                <button class="level-btn ${colorClass}" onclick="startGameWithLevel(${setting.level})">
-                    <h3>${name}</h3>
-                    <p>${desc}</p>
-                </button>
-            `;
-        }).join('');
+                // Update button text with admin settings
+                const titleSpan = btn.querySelector('span');
+                const descSmall = btn.querySelector('small');
+
+                if (titleSpan && setting.names) {
+                    // Use translated name from admin
+                    const name = setting.names[this.currentLang] || setting.names.en || titleSpan.textContent;
+                    titleSpan.textContent = name;
+                }
+
+                if (descSmall) {
+                    // Show actual settings from admin
+                    const points = setting.base_points;
+                    const feature = setting.hints_enabled ? 'Hints' :
+                                  setting.shuffle_enabled ? `Shuffles (${setting.shuffle_frequency}s)` :
+                                  'No Hints';
+                    descSmall.textContent = `${points} Points + ${feature}`;
+                }
+
+                console.log(`Level ${level} enabled:`, setting);
+            } else {
+                // Level doesn't exist in admin panel - disable button
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'not-allowed';
+                btn.style.filter = 'grayscale(100%)';
+
+                const descSmall = btn.querySelector('small');
+                if (descSmall) {
+                    descSmall.textContent = 'Not available yet';
+                    descSmall.style.color = '#999';
+                }
+
+                console.log(`Level ${level} disabled (not in admin)`);
+            }
+        });
     }
 
     async showLeaderboard() {
@@ -284,3 +270,4 @@ class UI {
         `;
     }
 }
+

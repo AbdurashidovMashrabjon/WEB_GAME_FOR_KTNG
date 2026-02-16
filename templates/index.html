@@ -149,7 +149,8 @@
         <div class="instructions-content">
             <div class="instruction-section">
                 <h3><i class="fas fa-bullseye"></i> <span data-i18n="instructions_objective">Objective</span></h3>
-                <p data-i18n="instructions_objective_text">Match text cards with their corresponding fruit cards to earn points and win rewards!</p>
+                <p data-i18n="instructions_objective_text">Match text cards with their corresponding fruit cards to earn
+                    points and win rewards!</p>
             </div>
 
             <div class="instruction-section">
@@ -157,7 +158,9 @@
                 <ol>
                     <li data-i18n="instructions_step1">Click on a text card (?) to reveal its description</li>
                     <li data-i18n="instructions_step2">Click on the matching fruit card that fits the description</li>
-                    <li data-i18n="instructions_step3">If correct, both cards disappear, you earn points, and new cards appear</li>
+                    <li data-i18n="instructions_step3">If correct, both cards disappear, you earn points, and new cards
+                        appear
+                    </li>
                     <li data-i18n="instructions_step4">If wrong, cards reset - but don't worry, no penalty!</li>
                 </ol>
             </div>
@@ -165,12 +168,18 @@
             <div class="instruction-section">
                 <h3><i class="fas fa-trophy"></i> <span data-i18n="instructions_scoring">Scoring System</span></h3>
                 <ul>
-                    <li><strong data-i18n="level_easy">Easy</strong> (3 min): <span data-i18n="instructions_easy_points">5 points + hints shown + no shuffling</span></li>
-                    <li><strong data-i18n="level_medium">Medium</strong> (2.5 min): <span data-i18n="instructions_medium_points">15 points + occasional shuffling</span></li>
-                    <li><strong data-i18n="level_hard">Hard</strong> (2 min): <span data-i18n="instructions_hard_points">20 points + frequent shuffling</span></li>
+                    <li><strong data-i18n="level_easy">Easy</strong> (3 min): <span
+                            data-i18n="instructions_easy_points">5 points + hints shown + no shuffling</span></li>
+                    <li><strong data-i18n="level_medium">Medium</strong> (2.5 min): <span
+                            data-i18n="instructions_medium_points">15 points + occasional shuffling</span></li>
+                    <li><strong data-i18n="level_hard">Hard</strong> (2 min): <span
+                            data-i18n="instructions_hard_points">20 points + frequent shuffling</span></li>
                 </ul>
-                <p><strong data-i18n="instructions_combo">🔥 Combo Bonus:</strong> <span data-i18n="instructions_combo_detail">+2 points for each consecutive match!</span></p>
-                <p><strong data-i18n="instructions_time_bonus">⚡ Time Bonus:</strong> <span data-i18n="instructions_time_bonus_detail">+5 points when you have more than 1 minute left!</span></p>
+                <p><strong data-i18n="instructions_combo">🔥 Combo Bonus:</strong> <span
+                        data-i18n="instructions_combo_detail">+2 points for each consecutive match!</span></p>
+                <p><strong data-i18n="instructions_time_bonus">⚡ Time Bonus:</strong> <span
+                        data-i18n="instructions_time_bonus_detail">+5 points when you have more than 1 minute left!</span>
+                </p>
             </div>
 
             <div class="instruction-section">
@@ -185,7 +194,8 @@
             </div>
 
             <div class="instruction-section difficulty-guide">
-                <h3><i class="fas fa-star"></i> <span data-i18n="instructions_difficulty">Choose Your Challenge</span></h3>
+                <h3><i class="fas fa-star"></i> <span data-i18n="instructions_difficulty">Choose Your Challenge</span>
+                </h3>
                 <div class="difficulty-cards">
                     <div class="diff-card">
                         <div class="diff-icon">🌱</div>
@@ -242,7 +252,8 @@
     <div id="menu-screen" class="screen" data-testid="menu-screen">
         <!-- Header Controls (Only on Menu Screen) -->
         <div class="menu-header-controls">
-            <button id="instructions-toggle" class="btn-control" title="Game Instructions" onclick="toggleInstructions()">
+            <button id="instructions-toggle" class="btn-control" title="Game Instructions"
+                    onclick="toggleInstructions()">
                 <i class="fas fa-question-circle"></i>
             </button>
             <button id="sound-toggle" class="btn-control" title="Toggle Sound">
@@ -281,20 +292,22 @@
         </div>
     </div>
 
+    <!-- LINE 289-301: Replace the LEVELS section with this -->
+
     <!-- ============ LEVELS ============ -->
     <div id="level-screen" class="screen hidden">
         <h2 data-i18n="select_level">Select Difficulty</h2>
 
         <div class="level-grid">
-            <button class="btn-level-large easy" onclick="game.selectDifficulty(1)">
+            <button class="btn-level-large easy" onclick="startGameWithLevel(1)">
                 <span data-i18n="level_easy">Easy</span>
                 <small>5 Points + Hints</small>
             </button>
-            <button class="btn-level-large medium" onclick="game.selectDifficulty(2)">
+            <button class="btn-level-large medium" onclick="startGameWithLevel(2)">
                 <span data-i18n="level_medium">Medium</span>
                 <small>15 Points + Shuffles</small>
             </button>
-            <button class="btn-level-large hard" onclick="game.selectDifficulty(3)">
+            <button class="btn-level-large hard" onclick="startGameWithLevel(3)">
                 <span data-i18n="level_hard">Hard</span>
                 <small>20 Points + Fast Shuffles</small>
             </button>
@@ -372,7 +385,8 @@
         <h2><i class="fas fa-flag-checkered"></i> <span data-i18n="game_over">Game Over</span></h2>
 
         <div class="score-box" style="text-align: center; margin: 20px 0;">
-            <span style="font-size: 1.2rem; display: block; margin-bottom: 5px;"><i class="fas fa-star"></i> <span data-i18n="score">Score</span></span>
+            <span style="font-size: 1.2rem; display: block; margin-bottom: 5px;"><i class="fas fa-star"></i> <span
+                    data-i18n="score">Score</span></span>
             <span id="final-score" style="font-size: 3rem; font-weight: bold; color: #4CAF50;">0</span>
         </div>
 
@@ -396,14 +410,14 @@
 <script src="{% static 'js/main.js' %}"></script>
 
 <script>
-// Toggle instructions modal
-function toggleInstructions() {
-    const modal = document.getElementById('instructions-modal');
-    modal.classList.toggle('hidden');
-}
+    // Toggle instructions modal
+    function toggleInstructions() {
+        const modal = document.getElementById('instructions-modal');
+        modal.classList.toggle('hidden');
+    }
 
-// Make sure game instance exists globally
-window.game = window.game || new Game(new API(), window.ui || {});
+    // Make sure game instance exists globally
+    window.game = window.game || new Game(new API(), window.ui || {});
 </script>
 
 </body>
